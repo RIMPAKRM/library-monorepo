@@ -3,6 +3,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { ROLE_LABELS } from '@/constants';
 import { cn } from '@/utils/helpers';
+import { Footer } from '@/components/layout/Footer';
 
 interface LayoutProps {
   children?: ReactNode;
@@ -11,7 +12,6 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const { user, isAuthenticated, logout, hasRole } = useAuthStore();
   const location = useLocation();
-  const isSidebarOpen = false; // Можно добавить состояние для мобильного меню
 
   const navItems = [
     { path: '/books', label: 'Каталог книг', icon: 'bi-book' },
@@ -166,6 +166,8 @@ export function Layout({ children }: LayoutProps) {
         <main className="flex-1 p-6 lg:p-8">
           {children || <Outlet />}
         </main>
+
+        <Footer />
       </div>
     </div>
   );

@@ -1,10 +1,10 @@
 import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { UserRole } from '@/types';
 
 interface RoleGuardProps {
-  children: ReactNode;
+  children?: ReactNode;
   allowedRoles: UserRole | UserRole[];
 }
 
@@ -20,5 +20,8 @@ export function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
     return <Navigate to="/books" replace />;
   }
 
-  return <>{children}</>;
+  // Если контент не передан, рендерим вложенный маршрут.
+  // Так RoleGuard можно использовать как обёртку группы роутов
+  // без повторного Layout (иначе сайдбар и футер дублируются).
+  return <>{children ?? <Outlet />}</>;
 }

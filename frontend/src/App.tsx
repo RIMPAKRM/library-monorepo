@@ -11,6 +11,7 @@ import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
 import { LibrarianDashboardPage } from '@/pages/librarian/LibrarianDashboardPage';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { RoleGuard } from '@/components/auth/RoleGuard';
+import { UserRole } from '@/types';
 
 function App() {
   return (
@@ -29,15 +30,11 @@ function App() {
         <Route path="/profile" element={<ProfilePage />} />
         
         {/* Role-specific routes */}
-        <Route 
-          element={<RoleGuard allowedRoles={['LIBRARIAN', 'MODERATOR']}><Layout /></RoleGuard>}
-        >
+        <Route element={<RoleGuard allowedRoles={['LIBRARIAN', 'MODERATOR'] as any} />}>
           <Route path="/librarian" element={<LibrarianDashboardPage />} />
         </Route>
-        
-        <Route 
-          element={<RoleGuard allowedRoles={['MODERATOR']}><Layout /></RoleGuard>}
-        >
+
+        <Route element={<RoleGuard allowedRoles={['MODERATOR'] as any} />}>
           <Route path="/admin" element={<AdminDashboardPage />} />
         </Route>
       </Route>
