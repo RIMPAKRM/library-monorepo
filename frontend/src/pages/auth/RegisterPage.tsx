@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/utils/helpers';
+import { getApiErrorMessage } from '@/utils/apiError';
 
 const registerSchema = z.object({
   firstName: z.string().min(2, 'Имя должно быть минимум 2 символа'),
@@ -53,13 +54,13 @@ export function RegisterPage() {
         password: data.password,
       });
       setAuth({
-        user: response.user as any,
+        user: response.user,
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
       });
       navigate('/books', { replace: true });
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Ошибка регистрации. Попробуйте еще раз.');
+    } catch (err) {
+      setError(getApiErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

@@ -1,12 +1,21 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { API_BASE_URL } from '@/constants';
 import { STORAGE_KEYS } from '@/constants';
-import { IApiResponse, IPaginatedResponse, IQueryParams } from '@/types';
+import { IApiResponse, ILoginResponse, IPaginatedResponse, IQueryParams } from '@/types';
+import { useAuthStore } from '@/store/authStore';
+
+const isValidStoredToken = (token: string | null): token is string =>
+  Boolean(token) && token !== 'undefined' && token !== 'null';
+
+interface IRefreshSubscriber {
+  resolve: (token: string) => void;
+  reject: (error: unknown) => void;
+}
 
 class ApiService {
   private client: AxiosInstance;
   private isRefreshing = false;
-  private refreshSubscribers: Array<(token: string) => void> = [];
+  private refreshSubscribers: IRefreshSubscriber[] = [];
 
   constructor() {
     this.client = axios.create({
@@ -25,7 +34,7 @@ class ApiService {
     this.client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
         const accessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-        if (accessToken && config.headers) {
+        if (isValidStoredToken(accessToken) && config.headers) {
           config.headers.Authorization = `Bearer ${accessToken}`;
         }
         return config;
@@ -39,15 +48,27 @@ class ApiService {
       async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // Не пытаемся обновлять токен на запросах авторизации:
+        // 401 от /auth/login означает неверные данные, а не истёкшую сессию.
+        const isAuthRequest = Boolean(
+          originalRequest?.url &&
+            ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'].some((path) =>
+              originalRequest.url!.includes(path)
+            )
+        );
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthRequest) {
           if (this.isRefreshing) {
             // Ждем обновления токена
-            return new Promise((resolve) => {
-              this.refreshSubscribers.push((token: string) => {
-                if (originalRequest.headers) {
-                  originalRequest.headers.Authorization = `Bearer ${token}`;
-                }
-                resolve(this.client(originalRequest));
+            return new Promise((resolve, reject) => {
+              this.refreshSubscribers.push({
+                resolve: (token: string) => {
+                  if (originalRequest.headers) {
+                    originalRequest.headers.Authorization = `Bearer ${token}`;
+                  }
+                  resolve(this.client(originalRequest));
+                },
+                reject,
               });
             });
           }
@@ -57,17 +78,19 @@ class ApiService {
 
           try {
             const newAccessToken = await this.refreshAccessToken();
-            this.refreshSubscribers.forEach((callback) => callback(newAccessToken));
+            this.refreshSubscribers.forEach((subscriber) => subscriber.resolve(newAccessToken));
             this.refreshSubscribers = [];
-            
+
             if (originalRequest.headers) {
               originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
             }
             return this.client(originalRequest);
           } catch (refreshError) {
+            // Сессия истекла окончательно: разлогиниваем и уводим на вход,
+            // чтобы не оставаться на странице с бесконечными 401.
+            this.refreshSubscribers.forEach((subscriber) => subscriber.reject(refreshError));
             this.refreshSubscribers = [];
-            this.clearAuth();
-            window.location.href = '/login';
+            this.handleAuthExpired();
             return Promise.reject(refreshError);
           } finally {
             this.isRefreshing = false;
@@ -79,19 +102,36 @@ class ApiService {
     );
   }
 
+  /** Обновление access токена через refresh cookie или сохранённый refresh токен */
   private async refreshAccessToken(): Promise<string> {
-    const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-    if (!refreshToken) throw new Error('No refresh token');
+    const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+    const refreshToken = isValidStoredToken(storedRefreshToken) ? storedRefreshToken : undefined;
 
-    const response = await axios.post<{ accessToken: string }>(
+    const response = await axios.post<IApiResponse<{ accessToken: string }>>(
       `${API_BASE_URL}/auth/refresh`,
-      { refreshToken },
+      refreshToken ? { refreshToken } : {},
       { withCredentials: true }
     );
 
-    const newAccessToken = response.data.accessToken;
+    // Бэкенд отвечает { success, data: { accessToken } }
+    const newAccessToken = response.data?.data?.accessToken;
+    if (!newAccessToken) {
+      throw new Error('Не удалось обновить токен: пустой ответ сервера');
+    }
+
     localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newAccessToken);
+    useAuthStore.getState().updateTokens(newAccessToken);
     return newAccessToken;
+  }
+
+  /** Полный сброс авторизации и переход на страницу входа */
+  private handleAuthExpired(): void {
+    this.clearAuth();
+    useAuthStore.getState().logout();
+
+    if (window.location.pathname !== '/login') {
+      window.location.replace('/login');
+    }
   }
 
   private clearAuth(): void {
@@ -127,13 +167,18 @@ class ApiService {
   }
 
   // Auth methods
-  async login(email: string, password: string): Promise<{ user: unknown; accessToken: string; refreshToken: string }> {
-    const response = await this.client.post('/auth/login', { email, password });
+  async login(email: string, password: string): Promise<ILoginResponse> {
+    const response = await this.client.post<IApiResponse<ILoginResponse>>('/auth/login', { email, password });
     return response.data.data;
   }
 
-  async register(data: { email: string; password: string; firstName: string; lastName: string }): Promise<{ user: unknown; accessToken: string; refreshToken: string }> {
-    const response = await this.client.post('/auth/register', data);
+  async register(data: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+  }): Promise<ILoginResponse> {
+    const response = await this.client.post<IApiResponse<ILoginResponse>>('/auth/register', data);
     return response.data.data;
   }
 
@@ -143,7 +188,8 @@ class ApiService {
   }
 
   async getProfile(): Promise<unknown> {
-    const response = await this.client.get('/users/me');
+    // Профиль текущего пользователя живёт в auth-модуле (/api/auth/me)
+    const response = await this.client.get('/auth/me');
     return response.data.data;
   }
 }

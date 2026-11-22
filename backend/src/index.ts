@@ -27,6 +27,9 @@ import { queueRoutes } from '@/modules/queue/queue.routes';
 
 const app = express();
 
+// API не должен отдавать 304 Not Modified: axios считает такой ответ ошибкой.
+app.set('etag', false);
+
 // Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -52,6 +55,13 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+// Данные API персональные и меняются — запрещаем кэширование и 304-ответы,
+// иначе после обновления токена повторный запрос может прийти из кэша.
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/books', bookRoutes);

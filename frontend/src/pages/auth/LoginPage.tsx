@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/utils/helpers';
+import { getApiErrorMessage } from '@/utils/apiError';
 
 const loginSchema = z.object({
   email: z.string().email('Неверный формат email'),
@@ -42,13 +43,13 @@ export function LoginPage() {
     try {
       const response = await api.login(data.email, data.password);
       setAuth({
-        user: response.user as any,
+        user: response.user,
         accessToken: response.accessToken,
         refreshToken: response.refreshToken,
       });
       navigate(from, { replace: true });
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Ошибка входа. Проверьте email и пароль.');
+    } catch (err) {
+      setError(getApiErrorMessage(err));
     } finally {
       setIsLoading(false);
     }

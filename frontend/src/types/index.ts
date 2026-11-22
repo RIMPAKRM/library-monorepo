@@ -112,6 +112,13 @@ export interface IAuthTokens {
   refreshToken: string;
 }
 
+/** Ответ логина/регистрации (refresh токен передаётся только в httpOnly cookie) */
+export interface ILoginResponse {
+  user: IUser;
+  accessToken: string;
+  refreshToken?: string;
+}
+
 /** API Response */
 export interface IApiResponse<T> {
   data: T;
