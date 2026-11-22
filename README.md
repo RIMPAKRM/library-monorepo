@@ -86,6 +86,8 @@ http://localhost:3000/api
 | `npm run dev` | Запуск frontend + backend одновременно |
 | `npm run build` | Сборка обоих проектов |
 | `npm run lint` | Проверка кода |
+| `Start-Service MySQL80` | Запуск MySQL сервиса |
+| `Get-Service MySQL80` | Проверка состояния MySQL сервиса |
 
 ### Frontend
 | Команда | Описание |
